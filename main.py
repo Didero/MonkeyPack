@@ -1,0 +1,218 @@
+import datetime, os, sys, time
+from typing import Dict, List
+
+import Keys, Utils
+from CustomExceptions import DecodeError
+from GGDict import GGDict
+
+# The current folder depends on whether this is run as a Python script or as a PyInstaller-created executable
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+	# Running in a PyInstaller bundle
+	CURRENT_FOLDER = os.path.abspath(os.path.dirname(sys.executable))
+else:
+	# Running in a normal Python process
+	CURRENT_FOLDER = os.path.abspath(os.path.dirname(__file__))
+
+
+def decodeGameData(encodedGameData: bytes) -> bytes:
+	"""Decodes the provided encoded game data into something parseable, or turns decoded data back into encoded data"""
+	# From https://github.com/bgbennyboy/Thimbleweed-Park-Explorer/blob/master/ThimbleweedLibrary/BundleReader_ggpack.cs#L627
+	encodedGameDataLength = len(encodedGameData)
+	decodedByteArray = bytearray(encodedGameDataLength)
+	decodeSum = ((len(encodedGameData)) + Keys.MAGIC_VALUE) & 0xFFFF
+	for index in range(encodedGameDataLength):
+		key1decodeByte = Keys.KEY_1[(decodeSum + Keys.MAGIC_VALUE) & 0xFF]
+		key2decodeByte = Keys.KEY_2[decodeSum]
+		decodedByteArray[index] = (encodedGameData[index] ^ key1decodeByte ^ key2decodeByte)
+		decodeSum = (decodeSum + Keys.KEY_1[decodeSum & 0xFF]) & 0xFFFF
+	return bytes(decodedByteArray)
+
+
+def listFiles(packFilepath: str):
+	"""List all the files inside the specified ggpack file"""
+	if not os.path.isfile(packFilepath):
+		raise FileNotFoundError(f"Asked to list files inside '{packFilepath}' but that file doesn't exist")
+	fileIndex = parseFileIndex(packFilepath)
+	# Write the found files to the screen and to a textfile too, to make it easier to look through when there's a lot of files
+	outputFilepath = os.path.join(CURRENT_FOLDER, os.path.basename(packFilepath) + '.txt')
+	with open(outputFilepath, 'w') as outputFile:
+		s = f"Found {len(fileIndex['files']):,} files inside '{packFilepath}':"
+		outputFile.write(s + '\n')
+		print(s)
+		for fileCount, fileEntry in enumerate(fileIndex['files']):
+			s = f"File {fileCount + 1:,} of {len(fileIndex['files']):,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes"
+			outputFile.write(s + '\n')
+			print(s)
+	print(f"Listed {len(fileIndex['files']):,} files inside {packFilepath}, this list has also been written to '{outputFilepath}'")
+
+def unpack(unpackFilePath: str):
+	"""Unpacks the provided ggpack file into a folder named after the provided ggpack file"""
+	if not os.path.isfile(unpackFilePath):
+		raise FileNotFoundError(f"Asked to unpack file '{unpackFilePath}', but that file doesn't exist")
+	# Dump the files inside a folder named after the pack file. That folder will be created where this script is
+	extractFolder = os.path.join(CURRENT_FOLDER, os.path.basename(unpackFilePath).replace('.', ''))
+	fileIndex = parseFileIndex(unpackFilePath)
+	os.makedirs(extractFolder, exist_ok=True)
+	totalFileCount = len(fileIndex['files'])
+	for fileCount, fileEntry in enumerate(fileIndex['files']):
+		if len(fileEntry) < 3:
+			print(f"Skipping unpacking '{fileEntry}' from '{fileIndex}', not enough info stored")
+			continue
+		if 'filename' not in fileEntry or 'offset' not in fileEntry or 'size' not in fileEntry:
+			print(f"Invalid file entry '{fileEntry}', missing key 'filename', 'offset', or 'size', skipping")
+			continue
+		print(f"Unpacking file {fileCount + 1:,} of {totalFileCount:,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes")
+		encodedFileData = getEncodedPackFile(unpackFilePath, fileEntry['offset'], fileEntry['size'])
+		if '.bank' in fileEntry['filename']:
+			# .bank files aren't encoded
+			decodedFileData = encodedFileData
+		else:
+			decodedFileData = decodeGameData(encodedFileData)
+		filePath = os.path.join(extractFolder, fileEntry['filename'])
+		with open(filePath, 'wb') as f:
+			f.write(decodedFileData)
+	print(f"Successfully unpacked {totalFileCount:,} files from '{unpackFilePath}' into '{extractFolder}")
+
+def parseFileIndex(gameFilePath: str) -> Dict:
+	encodedFileIndex = getEncodedFileIndex(gameFilePath)
+	decodedFileIndex = decodeGameData(encodedFileIndex)
+	gameFileIndex = GGDict.fromGgDict(decodedFileIndex, True)
+	return gameFileIndex
+
+def getEncodedFileIndex(gameFilePath: str) -> bytes:
+	print(f"Opening game file '{gameFilePath}'")
+	with open(gameFilePath, 'rb') as gameFile:
+		fileSize = os.path.getsize(gameFilePath)
+		if fileSize < 12:
+			raise DecodeError(f"File '{gameFilePath}' is too small to be a ggpack file")
+		dataOffset = Utils.readInt(gameFile)
+		dataSize = Utils.readInt(gameFile)
+		if dataSize < 1:
+			raise DecodeError(f"Invalid data size of {dataSize}")
+		if dataOffset + dataSize > fileSize:
+			raise DecodeError(f"Found an offset of {dataOffset:,} and a data size of {dataSize:,}, totalling {dataOffset + dataSize:,}, but the file is only {fileSize:,} bytes on disk")
+		gameFile.seek(dataOffset)
+		return gameFile.read(dataSize)
+
+def getEncodedPackFile(gameFilePath: str, startOffset: int, size: int = None):
+	with open(gameFilePath, 'rb') as gameFile:
+		gameFile.seek(startOffset)
+		if size:
+			return gameFile.read(size)
+		else:
+			raise DecodeError(f"Missing size parameter for entry at start offset {startOffset}")
+
+
+def packFiles(filenamesToPack: List[str]):
+	"""Pack the files from the provided filenames into a ggpack that the game can recognise"""
+	# First determine which ggpack filename we can use.
+	packFilename = getAvailableFilename()
+	if not packFilename:
+		raise FileExistsError(f"There are already too many Weird.ggpack files in this folder, valid ggpacks end with 1-9 and optionally the letters a to f")
+	packHeaderSize = 8  # A pack file starts with two ints, so take that into account when storing offsets
+	fileOffsetsDict = {"files": [], "guid": "b554baf88ff004c50cc0214575794b8c"}  # All the RtMI ggpack files use the same guid, use it for our packfile too
+	# Collect the data from the files we need to pack
+	encodedFilesData = bytearray()
+	for fileCount, filenameToPack in enumerate(filenamesToPack):
+		# If a directory was specified, pack all the files inside it
+		if os.path.isdir(filenameToPack):
+			for fn in os.listdir(filenameToPack):
+				filenameInFolder = os.path.join(filenameToPack, fn)
+				if not os.path.isdir(filenameInFolder):
+					filenamesToPack.append(filenameInFolder)
+			continue
+		if not os.path.isfile(filenameToPack):
+			raise FileNotFoundError(f"Asked to pack file '{filenameToPack}' but that file doesn't exist")
+		print(f"Packing file {fileCount + 1:,} of {len(filenamesToPack):,}: '{filenameToPack}'")
+		with open(filenameToPack, 'rb') as fileToPack:
+			# .bank files contain music and sounds, and are stored unencoded
+			if filenameToPack.endswith('.bank'):
+				encodedDataToPack = fileToPack.read()
+			else:
+				encodedDataToPack = decodeGameData(fileToPack.read())
+			fileOffsetsDict['files'].append({"filename": os.path.basename(filenameToPack), "offset": packHeaderSize + len(encodedFilesData), "size": len(encodedDataToPack)})
+			encodedFilesData.extend(encodedDataToPack)
+	# Then write the data to file, including a file index
+	print(f"Writing packedfile to '{packFilename}'")
+	fileIndex = GGDict.toGgDict(fileOffsetsDict, True)
+	with open(packFilename, 'wb') as packFile:
+		# First write the offset to and size of the file index
+		packFile.write(Utils.toWritableInt(packHeaderSize + len(encodedFilesData)))
+		packFile.write(Utils.toWritableInt(len(fileIndex)))
+		# Then write the encoded file data
+		packFile.write(encodedFilesData)
+		# And finally write the file index
+		packFile.write(decodeGameData(fileIndex))
+	print(f"Successfully packed {len(filenamesToPack):,} files into '{packFilename}'")
+
+def getAvailableFilename():
+	# Valid extensions after the 'ggpack' part are 1 to 9, optionally followed by the letter a to f
+	for i in range(6, 10):
+		letterlessFilename = os.path.join(CURRENT_FOLDER, f'Weird.ggpack{i}')
+		if not os.path.isfile(letterlessFilename):
+			return letterlessFilename
+		for letter in 'abcdef':
+			letteredFilename = letterlessFilename + letter
+			if not os.path.isfile(letteredFilename):
+				return letteredFilename
+	return None
+
+def printHelp():
+	print("MonkeyPack is a simple tool to unpack and pack files from the game Return To Monkey Island")
+	print("You can drag your file(s) on top of this program. If they're ggpack files, they'll be unpacked. Otherwise, a new ggpack file will be created with those files inside it.")
+	print("You can also provide the filename(s) on the command line, that works the same way as dragging them onto the program.")
+	print("Packed and unpacked files are always written in the folder where this program is, so make sure you have write permission.")
+	print("There are also command line options if you want more control, that should be typed after the program name, without preceding dashes:")
+	print("  help: Print this help")
+	print("  list [path to ggpack file]: List which files are inside the provided ggpack file, and also writes that info to a textfile named after the ggpack file.")
+	print("  unpack [path to ggpack file]: Unpacks the provided ggpack file in the current directory, inside a folder named after the ggpack file. Multiple ggpack files can be provided, separated by a space.")
+	print("  pack [list of files/folders to pack]: Packs the provided files (separated by spaces) into a single ggpack file, that will be placed in the current directory. If a folder name is provided, all the files inside that folder will be packed, but subfolders are ignored.")
+
+def main():
+	startTime = time.perf_counter()
+	try:
+		if len(sys.argv) < 2:
+			command = 'help'
+		else:
+			command = sys.argv[1].lower().lstrip('-')
+		if command == 'help':
+			printHelp()
+		elif command == 'list':
+			if len(sys.argv) < 3:
+				print("Please add a ggpack file to list the contents of")
+			else:
+				listFiles(sys.argv[2])
+		elif command == 'unpack':
+			if len(sys.argv) < 3:
+				print("Please add one or more ggpack files to unpack")
+			else:
+				for filepath in sys.argv[2:]:
+					unpack(filepath)
+		elif command == 'pack':
+			if len(sys.argv) < 3:
+				print("Please add one or more files to pack into a ggpack file")
+			else:
+				packFiles(sys.argv[2:])
+		else:
+			# Try to guess what to do with the provided argument
+			print("WARNING: No explicit command provided, guessing what to do. Call this script with 'help' to see the availble commands")
+			if os.path.exists(sys.argv[1]):
+				if '.ggpack' in sys.argv[1]:
+					for filepath in sys.argv[1:]:
+						unpack(filepath)
+				else:
+					packFiles(sys.argv[1:])
+			else:
+				print(f"Unknown command '{sys.argv[1]}'")
+				printHelp()
+	except Exception as e:
+		print(f"ERROR: {e}")
+		with open('error.log', 'a') as errorFile:
+			errorFile.write(f"[{datetime.datetime.now()}] {e}")
+			errorFile.write('\n')
+	finally:
+		print(f"Execution finished in {time.perf_counter() - startTime:.6f} seconds")
+
+
+if __name__ == '__main__':
+	main()
