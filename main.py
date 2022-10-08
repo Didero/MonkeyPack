@@ -109,40 +109,40 @@ def packFiles(filenamesToPack: List[str]):
 	packFilename = getAvailableFilename()
 	if not packFilename:
 		raise FileExistsError(f"There are already too many Weird.ggpack files in this folder, valid ggpacks end with 1-9 and optionally the letters a to f")
-	packHeaderSize = 8  # A pack file starts with two ints, so take that into account when storing offsets
 	fileOffsetsDict = {"files": [], "guid": "b554baf88ff004c50cc0214575794b8c"}  # All the RtMI ggpack files use the same guid, use it for our packfile too
-	# Collect the data from the files we need to pack
-	encodedFilesData = bytearray()
-	for fileCount, filenameToPack in enumerate(filenamesToPack):
-		# If a directory was specified, pack all the files inside it
-		if os.path.isdir(filenameToPack):
-			for fn in os.listdir(filenameToPack):
-				filenameInFolder = os.path.join(filenameToPack, fn)
-				if not os.path.isdir(filenameInFolder):
-					filenamesToPack.append(filenameInFolder)
-			continue
-		if not os.path.isfile(filenameToPack):
-			raise FileNotFoundError(f"Asked to pack file '{filenameToPack}' but that file doesn't exist")
-		print(f"Packing file {fileCount + 1:,} of {len(filenamesToPack):,}: '{filenameToPack}'")
-		with open(filenameToPack, 'rb') as fileToPack:
-			# .bank files contain music and sounds, and are stored unencoded
-			if filenameToPack.endswith('.bank'):
-				encodedDataToPack = fileToPack.read()
-			else:
-				encodedDataToPack = decodeGameData(fileToPack.read())
-			fileOffsetsDict['files'].append({"filename": os.path.basename(filenameToPack), "offset": packHeaderSize + len(encodedFilesData), "size": len(encodedDataToPack)})
-			encodedFilesData.extend(encodedDataToPack)
-	# Then write the data to file, including a file index
-	print(f"Writing packedfile to '{packFilename}'")
-	fileIndex = GGDict.toGgDict(fileOffsetsDict, True)
 	with open(packFilename, 'wb') as packFile:
-		# First write the offset to and size of the file index
-		packFile.write(Utils.toWritableInt(packHeaderSize + len(encodedFilesData)))
-		packFile.write(Utils.toWritableInt(len(fileIndex)))
-		# Then write the encoded file data
-		packFile.write(encodedFilesData)
-		# And finally write the file index
+		# First write two dummy integers, these will get overwritten later with the file index start offset and the file index size, once we know those
+		packFile.write(Utils.toWritableInt(0))
+		packFile.write(Utils.toWritableInt(0))
+		# Write the files to the pack file
+		for fileCount, filenameToPack in enumerate(filenamesToPack):
+			# If a directory was specified, pack all the files inside it
+			if os.path.isdir(filenameToPack):
+				for fn in os.listdir(filenameToPack):
+					filenameInFolder = os.path.join(filenameToPack, fn)
+					if not os.path.isdir(filenameInFolder):
+						filenamesToPack.append(filenameInFolder)
+				continue
+			if not os.path.isfile(filenameToPack):
+				raise FileNotFoundError(f"Asked to pack file '{filenameToPack}' but that file doesn't exist")
+			print(f"Packing file {fileCount + 1:,} of {len(filenamesToPack):,}: '{filenameToPack}'")
+			with open(filenameToPack, 'rb') as fileToPack:
+				# .bank files contain music and sounds, and are stored unencoded
+				if filenameToPack.endswith('.bank'):
+					encodedDataToPack = fileToPack.read()
+				else:
+					encodedDataToPack = decodeGameData(fileToPack.read())
+				fileOffsetsDict['files'].append({"filename": os.path.basename(filenameToPack), "offset": packFile.tell(), "size": len(encodedDataToPack)})
+				packFile.write(encodedDataToPack)
+		# Then add the file index
+		print(f"Writing file index '{packFilename}'")
+		fileIndexStartOffset = packFile.tell()
+		fileIndex = GGDict.toGgDict(fileOffsetsDict, True)
 		packFile.write(decodeGameData(fileIndex))
+		# Now we can overwrite the initial two ints, the file index start offset and size
+		packFile.seek(0)
+		packFile.write(Utils.toWritableInt(fileIndexStartOffset))
+		packFile.write(Utils.toWritableInt(len(fileIndex)))
 	print(f"Successfully packed {len(filenamesToPack):,} files into '{packFilename}'")
 
 def getAvailableFilename():
