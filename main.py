@@ -167,6 +167,7 @@ def printHelp():
 	print("  list [path to ggpack file]: List which files are inside the provided ggpack file, and also writes that info to a textfile named after the ggpack file.")
 	print("  unpack [path to ggpack file]: Unpacks the provided ggpack file in the current directory, inside a folder named after the ggpack file. Multiple ggpack files can be provided, separated by a space.")
 	print("  pack [list of files/folders to pack]: Packs the provided files (separated by spaces) into a single ggpack file, that will be placed in the current directory. If a folder name is provided, all the files inside that folder will be packed, but subfolders are ignored.")
+	print("See the included readme or https://github.com/didero/monkeypack for a more elaborate usage guide")
 
 def main():
 	startTime = time.perf_counter()
