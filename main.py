@@ -1,5 +1,5 @@
 import datetime, os, sys, time
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import Keys, Utils
 from CustomExceptions import DecodeError
@@ -157,6 +157,21 @@ def getAvailableFilename():
 				return letteredFilename
 	return None
 
+def parseFileArguments(argumentList: List[str]) -> Tuple[List[str], List[str]]:
+	"""
+	Split the provided filename arguments into two separate filename lists
+	:param argumentList: The list of filenames to parse
+	:return: A tuple with two lists: One with ggpack filenames, one with normal filenames
+	"""
+	packList: List[str] = []
+	filenameList: List[str] = []
+	for fn in argumentList:
+		if '.ggpack' in fn:
+			packList.append(fn)
+		else:
+			filenameList.append(fn)
+	return packList, filenameList
+
 def printHelp():
 	print("MonkeyPack is a simple tool to unpack and pack files from the game Return To Monkey Island")
 	print("You can drag your file(s) on top of this program. If they're ggpack files, they'll be unpacked. Otherwise, a new ggpack file will be created with those files inside it.")
@@ -173,39 +188,60 @@ def main():
 	startTime = time.perf_counter()
 	try:
 		if len(sys.argv) < 2:
-			command = 'help'
-		else:
-			command = sys.argv[1].lower().lstrip('-')
+			printHelp()
+			return
+		command = sys.argv[1].lower().lstrip('-')
+		argumentList = sys.argv[2:]
 		if command == 'help':
 			printHelp()
-		elif command == 'list':
-			if len(sys.argv) < 3:
-				print("Please add a ggpack file to list the contents of")
-			else:
-				listFiles(sys.argv[2])
-		elif command == 'unpack':
-			if len(sys.argv) < 3:
-				print("Please add one or more ggpack files to unpack")
-			else:
-				for filepath in sys.argv[2:]:
-					unpack(filepath)
-		elif command == 'pack':
-			if len(sys.argv) < 3:
-				print("Please add one or more files to pack into a ggpack file")
-			else:
-				packFiles(sys.argv[2:])
-		else:
-			# Try to guess what to do with the provided argument
+			return
+
+		if command not in ('list', 'pack', 'unpack'):
+			# Try to guess what to do with the provided argument(s)
 			print("WARNING: No explicit command provided, guessing what to do. Call this script with 'help' to see the availble commands")
-			if os.path.exists(sys.argv[1]):
-				if '.ggpack' in sys.argv[1]:
-					for filepath in sys.argv[1:]:
-						unpack(filepath)
-				else:
-					packFiles(sys.argv[1:])
-			else:
-				print(f"Unknown command '{sys.argv[1]}'")
+			if not os.path.exists(sys.argv[1]):
+				print(f"ERROR: Unknown command '{sys.argv[1]}'")
 				printHelp()
+				return
+			if '.ggpack' in sys.argv[1]:
+				command = 'unpack'
+			else:
+				command = 'pack'
+			# The first argument was apparently a file, add it back into the argument list
+			argumentList.insert(0, sys.argv[1])
+
+		packFilenameList, filenameList = parseFileArguments(argumentList)
+		if len(packFilenameList) == 0 and len(filenameList) == 0:
+			print("ERROR: No filenames provided")
+			printHelp()
+			return
+
+		if command == 'list':
+			if len(packFilenameList) == 0:
+				print("ERROR: Please add one or more ggpack files to list the contents of")
+			else:
+				if len(filenameList) > 0:
+					print("WARNING: Some of the provided filenames aren't ggpack files, they will be ignored")
+				for packFilename in packFilenameList:
+					listFiles(packFilename)
+		elif command == 'unpack':
+			if len(packFilenameList) == 0:
+				print("ERROR: Please add one or more ggpack files to unpack")
+			else:
+				if len(filenameList) > 0:
+					print("WARNING: Some of the provided filenames aren't ggpack files, they will be ignored")
+				for packFilename in packFilenameList:
+					unpack(packFilename)
+		elif command == 'pack':
+			if len(filenameList) == 0:
+				print("ERROR: Please add one or more files to pack into a ggpack file")
+			else:
+				if len(packFilenameList) > 0:
+					print("WARNING: Some of the provided files are ggpack files, they can't be packed so they will be ignored")
+				packFiles(filenameList)
+		else:
+			print(f"ERROR: Unknown command '{command}'")
+			printHelp()
 	except Exception as e:
 		print(f"ERROR: {e}")
 		with open('error.log', 'a') as errorFile:
