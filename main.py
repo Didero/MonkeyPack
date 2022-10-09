@@ -36,13 +36,9 @@ def listFiles(packFilepath: str):
 	# Write the found files to the screen and to a textfile too, to make it easier to look through when there's a lot of files
 	outputFilepath = os.path.join(CURRENT_FOLDER, os.path.basename(packFilepath) + '.txt')
 	with open(outputFilepath, 'w') as outputFile:
-		s = f"Found {len(fileIndex['files']):,} files inside '{packFilepath}':"
-		outputFile.write(s + '\n')
-		print(s)
+		printAndWrite(f"Found {len(fileIndex['files']):,} files inside '{packFilepath}':", outputFile)
 		for fileCount, fileEntry in enumerate(fileIndex['files']):
-			s = f"File {fileCount + 1:,} of {len(fileIndex['files']):,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes"
-			outputFile.write(s + '\n')
-			print(s)
+			printAndWrite(f"File {fileCount + 1:,} of {len(fileIndex['files']):,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes", outputFile)
 	print(f"Listed {len(fileIndex['files']):,} files inside {packFilepath}, this list has also been written to '{outputFilepath}'")
 
 def unpack(unpackFilePath: str):
@@ -156,6 +152,10 @@ def getAvailableFilename():
 			if not os.path.isfile(letteredFilename):
 				return letteredFilename
 	return None
+
+def printAndWrite(stringToWrite: str, fileToWriteTo):
+	print(stringToWrite)
+	fileToWriteTo.write(stringToWrite + '\n')
 
 def parseFileArguments(argumentList: List[str]) -> Tuple[List[str], List[str]]:
 	"""
