@@ -1,4 +1,4 @@
-import datetime, os, sys, time
+import datetime, fnmatch, os, sys, time
 from typing import Dict, List, Tuple
 
 import Keys, Utils
@@ -28,20 +28,25 @@ def decodeGameData(encodedGameData: bytes) -> bytes:
 	return bytes(decodedByteArray)
 
 
-def listFiles(packFilepath: str):
+def listFiles(packFilepath: str, filenameFilterList: List[str] = None):
 	"""List all the files inside the specified ggpack file"""
 	if not os.path.isfile(packFilepath):
 		raise FileNotFoundError(f"Asked to list files inside '{packFilepath}' but that file doesn't exist")
 	fileIndex = parseFileIndex(packFilepath)
 	# Write the found files to the screen and to a textfile too, to make it easier to look through when there's a lot of files
 	outputFilepath = os.path.join(CURRENT_FOLDER, os.path.basename(packFilepath) + '.txt')
+	matchingFileCount = 0
 	with open(outputFilepath, 'w') as outputFile:
 		printAndWrite(f"Found {len(fileIndex['files']):,} files inside '{packFilepath}':", outputFile)
+		if filenameFilterList:
+			printAndWrite(f"Filtering on: " + ", ".join(filenameFilterList), outputFile)
 		for fileCount, fileEntry in enumerate(fileIndex['files']):
-			printAndWrite(f"File {fileCount + 1:,} of {len(fileIndex['files']):,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes", outputFile)
-	print(f"Listed {len(fileIndex['files']):,} files inside {packFilepath}, this list has also been written to '{outputFilepath}'")
+			if not filenameFilterList or doesFilenameMatchFilterList(fileEntry['filename'], filenameFilterList):
+				matchingFileCount += 1
+				printAndWrite(f"File {fileCount + 1:,} of {len(fileIndex['files']):,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes", outputFile)
+	print(f"Listed {matchingFileCount:,} files inside {packFilepath}, this list has also been written to '{outputFilepath}'")
 
-def unpack(unpackFilePath: str):
+def unpack(unpackFilePath: str, filenameFilterList: List[str] = None):
 	"""Unpacks the provided ggpack file into a folder named after the provided ggpack file"""
 	if not os.path.isfile(unpackFilePath):
 		raise FileNotFoundError(f"Asked to unpack file '{unpackFilePath}', but that file doesn't exist")
@@ -50,12 +55,18 @@ def unpack(unpackFilePath: str):
 	fileIndex = parseFileIndex(unpackFilePath)
 	os.makedirs(extractFolder, exist_ok=True)
 	totalFileCount = len(fileIndex['files'])
+	print(f"Unpacking {unpackFilePath}")
+	if filenameFilterList:
+		print(f"Filtering on " + ", ".join(filenameFilterList))
 	for fileCount, fileEntry in enumerate(fileIndex['files']):
 		if len(fileEntry) < 3:
 			print(f"Skipping unpacking '{fileEntry}' from '{fileIndex}', not enough info stored")
 			continue
 		if 'filename' not in fileEntry or 'offset' not in fileEntry or 'size' not in fileEntry:
 			print(f"Invalid file entry '{fileEntry}', missing key 'filename', 'offset', or 'size', skipping")
+			continue
+		if filenameFilterList and not doesFilenameMatchFilterList(fileEntry['filename'], filenameFilterList):
+			# The current file doesn't match the provided filter list, so skip it
 			continue
 		print(f"Unpacking file {fileCount + 1:,} of {totalFileCount:,}: '{fileEntry['filename']}', {fileEntry['size']:,} bytes")
 		encodedFileData = getEncodedPackFile(unpackFilePath, fileEntry['offset'], fileEntry['size'])
@@ -98,8 +109,7 @@ def getEncodedPackFile(gameFilePath: str, startOffset: int, size: int = None):
 		else:
 			raise DecodeError(f"Missing size parameter for entry at start offset {startOffset}")
 
-
-def packFiles(filenamesToPack: List[str]):
+def packFiles(filenamesToPack: List[str], filenameFilterList: List[str] = None):
 	"""Pack the files from the provided filenames into a ggpack that the game can recognise"""
 	# First determine which ggpack filename we can use.
 	packFilename = getAvailableFilename()
@@ -123,6 +133,8 @@ def packFiles(filenamesToPack: List[str]):
 				raise FileNotFoundError(f"Asked to pack file '{filenameToPack}' but that file doesn't exist")
 			if 'ggpack' in os.path.splitext(filenameToPack)[1].lower():
 				print(f"Skipping packing of ggpack file '{filenameToPack}'")
+				continue
+			if filenameFilterList and not doesFilenameMatchFilterList(filenameToPack, filenameFilterList):
 				continue
 			print(f"Packing file {fileCount + 1:,} of {len(filenamesToPack):,}: '{filenameToPack}'")
 			with open(filenameToPack, 'rb') as fileToPack:
@@ -160,20 +172,29 @@ def printAndWrite(stringToWrite: str, fileToWriteTo):
 	print(stringToWrite)
 	fileToWriteTo.write(stringToWrite + '\n')
 
-def parseFileArguments(argumentList: List[str]) -> Tuple[List[str], List[str]]:
+def doesFilenameMatchFilterList(filename: str, filenameFilterList: List[str]) -> bool:
+	for filenameFilter in filenameFilterList:
+		if fnmatch.fnmatch(filename, filenameFilter):
+			return True
+	return False
+
+def parseFileArguments(argumentList: List[str]) -> Tuple[List[str], List[str], List[str]]:
 	"""
-	Split the provided filename arguments into two separate filename lists
+	Split the provided filename arguments into three separate filename lists
 	:param argumentList: The list of filenames to parse
-	:return: A tuple with two lists: One with ggpack filenames, one with normal filenames
+	:return: A tuple with three lists: One with ggpack filenames, one with filename filters, one with normal filenames
 	"""
 	packList: List[str] = []
+	filterList: List[str] = []
 	filenameList: List[str] = []
 	for fn in argumentList:
 		if '.ggpack' in fn:
 			packList.append(fn)
+		elif '*' in fn or '?' in fn:
+			filterList.append(fn)
 		else:
 			filenameList.append(fn)
-	return packList, filenameList
+	return packList, filterList, filenameList
 
 def printHelp():
 	print("MonkeyPack is a simple tool to unpack and pack files from the game Return To Monkey Island")
@@ -185,6 +206,7 @@ def printHelp():
 	print("  list [list of ggpack files]: List which files are inside the provided ggpack files, and also writes that info to textfiles named after the ggpack files.")
 	print("  unpack [list of ggpack files]: Unpacks the provided ggpack files in the current directory, each inside a folder named after that ggpack file.")
 	print("  pack [list of files/folders to pack]: Packs the provided files (separated by spaces) into a single ggpack file, that will be placed in the current directory. If a folder name is provided, all the files inside that folder will be packed, but subfolders are ignored.")
+	print("You can provide filename filters to limit the output of these commands. Use '?' for single character matches and '*' for multi-character matches")
 	print("See the included readme or https://github.com/didero/monkeypack for a more elaborate usage guide")
 
 def main():
@@ -213,35 +235,31 @@ def main():
 			# The first argument was apparently a file, add it back into the argument list
 			argumentList.insert(0, sys.argv[1])
 
-		packFilenameList, filenameList = parseFileArguments(argumentList)
+		packFilenameList, filenameFilterList, filenameList = parseFileArguments(argumentList)
 		if len(packFilenameList) == 0 and len(filenameList) == 0:
 			print("ERROR: No filenames provided")
 			printHelp()
 			return
 
-		if command == 'list':
+		if command == 'list' or command == 'unpack':
 			if len(packFilenameList) == 0:
-				print("ERROR: Please add one or more ggpack files to list the contents of")
+				print("ERROR: Please provide one or more ggpack files")
 			else:
-				if len(filenameList) > 0:
-					print("WARNING: Some of the provided filenames aren't ggpack files, they will be ignored")
-				for packFilename in packFilenameList:
-					listFiles(packFilename)
-		elif command == 'unpack':
-			if len(packFilenameList) == 0:
-				print("ERROR: Please add one or more ggpack files to unpack")
-			else:
-				if len(filenameList) > 0:
-					print("WARNING: Some of the provided filenames aren't ggpack files, they will be ignored")
-				for packFilename in packFilenameList:
-					unpack(packFilename)
+				# For listing or unpacking the files, there is no need for a distinction between straight filenames and filename filters, so combine them into one filter list
+				filenameFilterList.extend(filenameList)
+				if command == 'list':
+					for packFilename in packFilenameList:
+						listFiles(packFilename, filenameFilterList)
+				elif command == 'unpack':
+					for packFilename in packFilenameList:
+						unpack(packFilename, filenameFilterList)
 		elif command == 'pack':
 			if len(filenameList) == 0:
 				print("ERROR: Please add one or more files to pack into a ggpack file")
 			else:
 				if len(packFilenameList) > 0:
 					print("WARNING: Some of the provided files are ggpack files, they can't be packed so they will be ignored")
-				packFiles(filenameList)
+				packFiles(filenameList, filenameFilterList)
 		else:
 			print(f"ERROR: Unknown command '{command}'")
 			printHelp()
