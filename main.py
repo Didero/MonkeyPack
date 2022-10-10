@@ -182,8 +182,8 @@ def printHelp():
 	print("Packed and unpacked files are always written in the folder where this program is, so make sure you have write permission.")
 	print("There are also command line options if you want more control, that should be typed after the program name, without preceding dashes:")
 	print("  help: Print this help")
-	print("  list [path to ggpack file]: List which files are inside the provided ggpack file, and also writes that info to a textfile named after the ggpack file.")
-	print("  unpack [path to ggpack file]: Unpacks the provided ggpack file in the current directory, inside a folder named after the ggpack file. Multiple ggpack files can be provided, separated by a space.")
+	print("  list [list of ggpack files]: List which files are inside the provided ggpack files, and also writes that info to textfiles named after the ggpack files.")
+	print("  unpack [list of ggpack files]: Unpacks the provided ggpack files in the current directory, each inside a folder named after that ggpack file.")
 	print("  pack [list of files/folders to pack]: Packs the provided files (separated by spaces) into a single ggpack file, that will be placed in the current directory. If a folder name is provided, all the files inside that folder will be packed, but subfolders are ignored.")
 	print("See the included readme or https://github.com/didero/monkeypack for a more elaborate usage guide")
 
