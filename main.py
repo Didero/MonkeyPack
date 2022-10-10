@@ -121,6 +121,9 @@ def packFiles(filenamesToPack: List[str]):
 				continue
 			if not os.path.isfile(filenameToPack):
 				raise FileNotFoundError(f"Asked to pack file '{filenameToPack}' but that file doesn't exist")
+			if 'ggpack' in os.path.splitext(filenameToPack)[1].lower():
+				print(f"Skipping packing of ggpack file '{filenameToPack}'")
+				continue
 			print(f"Packing file {fileCount + 1:,} of {len(filenamesToPack):,}: '{filenameToPack}'")
 			with open(filenameToPack, 'rb') as fileToPack:
 				# .bank files contain music and sounds, and are stored unencoded
