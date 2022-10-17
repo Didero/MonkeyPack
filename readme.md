@@ -50,3 +50,18 @@ You can also add filename filters. Use '?' to match a single character ('Text_??
 For 'list' and 'unpack', adding filename filters only lists or unpacks files that match the filter.  
 For 'pack', adding filename filters only packs files into the new ggpack file that match the filter.
 Example: 'monkeypack.exe unpack "C:\Program Files (x86)\Steam\steamapps\common\Return To Monkey Island\Weird.ggpack1a" \*.tsv' only unpacks files that end with '*.tsv'
+
+## Version History
+
+### Version 0.3 - 2022-10-17
+- Fix a bug in the GGDict parser, that could make it miss some strings in the strings list
+
+### Version 0.2 - 2022-10-10:
+- Don't keep all the files to pack in memory. This massively reduces memory usage during packing
+- 'pack' now ignores ggpack files
+- Add filename filtering. For example, 'monkeypack.exe unpack path/to/game/Weird.ggpack1a *.tsv' only unpacks the .tsv files from the ggpack file. Works for 'list' and 'pack' too.
+- Update help inside program
+- Update and expand readme
+
+### Version 0.1 - 2022-10-03:
+- Initial release 
