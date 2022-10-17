@@ -44,7 +44,7 @@ class GGDict:
 			raise DecodeError(f"Invalid index start offset of {offsetsListStart:,}, too small")
 		# Iterate over the offsets and retrieve the string at each location
 		stringList: List[str] = []
-		for currentOffsetsListOffset in range(offsetsListStart, sourceDataLength - offsetsListStart, 4):
+		for currentOffsetsListOffset in range(offsetsListStart, sourceDataLength, 4):
 			stringOffset = Utils.parseInt(sourceData, currentOffsetsListOffset)
 			if stringOffset <= -1:
 				# '-1' signals the end of the offsets list, so we can stop
