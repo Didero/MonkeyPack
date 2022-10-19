@@ -16,7 +16,7 @@ else:
 
 def decodeGameData(encodedGameData: bytes) -> bytes:
 	"""Decodes the provided encoded game data into something parseable, or turns decoded data back into encoded data"""
-	# From https://github.com/bgbennyboy/Thimbleweed-Park-Explorer/blob/master/ThimbleweedLibrary/BundleReader_ggpack.cs#L627
+	# From https://github.com/bgbennyboy/Dinky-Explorer/blob/master/ThimbleweedLibrary/BundleReader_ggpack.cs#L627
 	encodedGameDataLength = len(encodedGameData)
 	decodedByteArray = bytearray(encodedGameDataLength)
 	decodeSum = ((len(encodedGameData)) + Keys.MAGIC_VALUE) & 0xFFFF

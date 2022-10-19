@@ -1,6 +1,6 @@
 # MonkeyPack
 A commandline packer and unpacker of Return To Monkey Island's ggpack files, written in Python 3.8.  
-This project is based very much on the work done over at [Thimbleweed Park Explorer](https://github.com/bgbennyboy/Thimbleweed-Park-Explorer). Thanks!
+This project is based very much on the work done over at [Dinky Explorer](https://github.com/bgbennyboy/Dinky-Explorer). Thanks!
 
 ## Finding The Game Files
 To find the game files in Steam: right-click 'Return To Monkey Island', select 'Manage', and then click 'Browse local files'. This opens a file explorer window in the location of the game files.
